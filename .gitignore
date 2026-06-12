@@ -1,0 +1,18 @@
+# 依赖
+node_modules/
+
+# 打包产物（exe 请发布到 GitHub Releases，不要提交进 git）
+dist/
+*.exe
+
+# 本地导出数据 / 缓存
+notes/
+books/
+*.xlsx
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
