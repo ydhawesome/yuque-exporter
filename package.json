@@ -1,0 +1,47 @@
+{
+  "name": "yuque-exporter",
+  "version": "1.0.0",
+  "description": "语雀小记 & 知识库导出工具",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "dependencies": {
+    "axios": "^1.17.0",
+    "exceljs": "^4.4.0",
+    "image-size": "^2.0.2",
+    "jsencrypt-node": "^1.0.4"
+  },
+  "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.2"
+  },
+  "build": {
+    "appId": "com.yuque.exporter",
+    "productName": "语雀导出工具",
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "语雀导出工具-便携版.exe"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "ui/**",
+      "src/**",
+      "assets/**",
+      "node_modules/**"
+    ]
+  }
+}
