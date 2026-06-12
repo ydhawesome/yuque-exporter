@@ -110,7 +110,6 @@ yuque-exporter/
 ## ⚠️ 免责声明
 
 - 本工具是一个**个人数据备份工具**，仅供用户**导出自己语雀账号下的数据**用于本地备份，不针对、不存储、不传播他人数据。
-- 「语雀」「Yuque」及其相关接口、商标的所有权归**语雀官方（杭州语雀科技有限公司 / 蚂蚁集团）**所有，本项目与语雀官方**无任何关联，亦未获其授权或认可**。
 - 使用本工具时，请自行遵守[语雀用户服务协议](https://www.yuque.com/terms)等相关条款及所在地区法律法规。**因使用本工具产生的任何后果（包括但不限于账号风险、数据风险）由使用者自行承担。**
 - 本工具**仅供学习交流与个人备份之用，禁止用于任何商业用途，禁止用于抓取或处理他人数据**。
 - 若语雀官方认为本项目存在不当之处，可通过 Issue 联系作者，作者将配合调整或下架。
@@ -120,7 +119,7 @@ yuque-exporter/
 
 ## 致谢
 
-本项目的语雀接口调用方式与登录加密思路，参考并衍生自 [**yuque-tools**](https://github.com/vannvan/yuque-tools)（作者 [vannvan](https://github.com/vannvan)，MIT 许可证）。在此特别致谢。
+本项目的语雀接口调用方式与登录加密思路，参考并衍生自 [**yuque-tools**](https://github.com/vannvan/yuque-tools)（作者 [vannvan](https://github.com/vannvan)）。在此特别致谢。
 
 第三方依赖的完整开源声明见 [THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md)。
 
