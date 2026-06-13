@@ -22,6 +22,16 @@
 
 ---
 
+## 📸 界面预览
+
+| 小记导出 | 知识库导出 |
+|:---:|:---:|
+| <img src="assets/screenshots/02-notes.png" width="420" /> | <img src="assets/screenshots/03-books.png" width="420" /> |
+| **导出进度实时显示** | **完成后一键打开** |
+| <img src="assets/screenshots/04-progress.png" width="420" /> | <img src="assets/screenshots/05-done.png" width="420" /> |
+
+---
+
 ## 功能
 
 ### 📝 小记导出
