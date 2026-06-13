@@ -33,7 +33,7 @@
       "icon": "assets/icon.ico"
     },
     "portable": {
-      "artifactName": "语雀导出工具-便携版.exe"
+      "artifactName": "Yuque-Exporter-Portable-${version}.exe"
     },
     "files": [
       "main.js",

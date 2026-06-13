@@ -1,8 +1,24 @@
 # 语雀导出工具
 
+<p>
+  <img alt="License" src="https://img.shields.io/github/license/ydhawesome/yuque-exporter?color=00d68f" />
+  <img alt="Release" src="https://img.shields.io/github/v/release/ydhawesome/yuque-exporter?color=22d3ee" />
+  <img alt="Downloads" src="https://img.shields.io/github/downloads/ydhawesome/yuque-exporter/total?color=8b5cf6&label=downloads" />
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078d6" />
+  <img alt="Built with" src="https://img.shields.io/badge/built%20with-Electron-47848f" />
+</p>
+
 一个跨平台桌面应用，用于**完整导出语雀「小记」和「知识库」**，包括正文、图片、链接卡片，并自动生成带嵌入图片的 Excel 表格。
 
 基于 Electron 构建，所有请求从本地发出，**账号密码不经过任何第三方服务器**。
+
+<p>
+  <a href="https://github.com/ydhawesome/yuque-exporter/releases/latest"><b>⬇ 下载最新版</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://yuque-landing.vercel.app"><b>🌐 在线介绍页</b></a>
+  &nbsp;·&nbsp;
+  <a href="#使用"><b>📖 使用说明</b></a>
+</p>
 
 ---
 
