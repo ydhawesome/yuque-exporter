@@ -76,6 +76,20 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
 .stat-num{font-size:28px;font-weight:700;color:#1a6ed8}
 .stat-label{font-size:12px;color:#718096;margin-top:4px}
 .result-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+
+/* ── REWARD 赞赏 ── */
+.reward-link{margin-left:14px;font-size:13px;color:#fff;cursor:pointer;background:rgba(255,255,255,.18);padding:4px 12px;border-radius:6px;transition:all .2s;white-space:nowrap}
+.reward-link:hover{background:rgba(255,255,255,.32)}
+.reward-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.reward-mask.show{display:flex}
+.reward-box{background:#fff;border-radius:16px;padding:26px 30px;text-align:center;max-width:330px;position:relative;box-shadow:0 12px 44px rgba(0,0,0,.3)}
+.reward-box h3{font-size:17px;color:#2d3748;margin-bottom:4px}
+.reward-box img{width:240px;height:auto;border-radius:8px;margin-top:10px}
+.reward-box p{font-size:12.5px;color:#718096;margin-top:12px;line-height:1.6}
+.reward-close{position:absolute;top:10px;right:14px;border:none;background:none;font-size:24px;color:#a0aec0;cursor:pointer;line-height:1}
+.reward-close:hover{color:#4a5568}
+.reward-done{display:inline-block;margin-top:14px;font-size:13px;color:#1a6ed8;background:#ebf4ff;padding:6px 14px;border-radius:6px;cursor:pointer;transition:background .2s}
+.reward-done:hover{background:#dbeafe}
 </style>
 </head>
 <body>
@@ -86,6 +100,7 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
     <div class="login-status" id="loginStatus">
       <span class="dot"></span><span id="loginName">未登录</span>
     </div>
+    <span class="reward-link" id="rewardLink">☕ 赞赏</span>
   </div>
   <div class="content">
 
@@ -177,14 +192,36 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
         <h2 style="text-align:center;margin-bottom:4px" id="doneTitle">导出完成</h2>
         <div class="result-stats" id="doneStats"></div>
         <div class="result-actions" id="doneActions"></div>
-        <div style="margin-top:16px">
+        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <button class="btn btn-outline" id="btnBackMain">返回主界面</button>
+          <span class="reward-done" id="rewardDone">☕ 觉得好用？请我喝杯咖啡</span>
         </div>
       </div>
     </div>
 
   </div>
 </div>
+<!-- ══ 赞赏弹窗 ══ -->
+<div class="reward-mask" id="rewardMask">
+  <div class="reward-box">
+    <button class="reward-close" id="rewardClose">×</button>
+    <h3>请我喝杯咖啡 ☕</h3>
+    <img src="../assets/reward-wechat.png" alt="微信赞赏码"/>
+    <p>觉得这个工具帮你省了事？欢迎自愿赞赏 —— 所有功能始终免费 :)</p>
+  </div>
+</div>
+<script>
+  (function(){
+    var mask=document.getElementById('rewardMask');
+    function open(){mask.classList.add('show')}
+    function close(){mask.classList.remove('show')}
+    document.getElementById('rewardLink').onclick=open;
+    document.getElementById('rewardDone').onclick=open;
+    document.getElementById('rewardClose').onclick=close;
+    mask.onclick=function(e){if(e.target===mask)close()};
+    document.addEventListener('keydown',function(e){if(e.key==='Escape')close()});
+  })();
+</script>
 <script src="app.js"></script>
 </body>
 </html>
