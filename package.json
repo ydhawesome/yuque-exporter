@@ -1,6 +1,6 @@
 {
   "name": "yuque-exporter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "语雀小记 & 知识库导出工具",
   "main": "main.js",
   "type": "commonjs",
