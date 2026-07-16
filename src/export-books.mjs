@@ -1,8 +1,7 @@
 // 知识库导出：选定知识库 → 拉取文档列表 → 下载 Markdown → 写文件
 import fs from 'fs'
 import path from 'path'
-import axios from 'axios'
-import { getDocsOfBook, getMarkdown } from './yuque-api.mjs'
+import { getDocsOfBook, http } from './yuque-api.mjs'
 import { readCookie } from './yuque-api.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -68,7 +67,7 @@ export async function exportBooks(books, outDir, onProgress) {
       try {
         const mdUrl = `/${book.user || ''}/${book.slug}/${doc.slug}/markdown?attachment=true&latexcode=false&anchor=false&linebreak=false`
         const resp = await retryFn(() =>
-          axios.get(`${HOST}${mdUrl}`, {
+          http.get(`${HOST}${mdUrl}`, {
             headers: {
               cookie: cookieStr(),
               'x-requested-with': 'XMLHttpRequest',

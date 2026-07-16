@@ -23,6 +23,10 @@ const HOST = 'https://www.yuque.com'
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/20G81 YuqueMobileApp/1.0.2 (AppBuild/650 Device/Phone Locale/zh-cn Theme/light YuqueType/public)'
 const COOKIE_TTL = 86400000  // 24h
 
+// 语雀为国内站点，走系统/环境变量代理（如 Clash）常被阿里云防护拦截导致超时，
+// 因此固定直连，忽略 HTTP(S)_PROXY 环境变量
+export const http = axios.create({ proxy: false })
+
 // ─── 数据目录 %APPDATA%\yuque-exporter\ ─────────────────────────────
 function dataDir() {
   const base = process.env.APPDATA || path.join(process.env.USERPROFILE || '', 'AppData', 'Roaming')
@@ -66,7 +70,7 @@ export function checkLogin() {
 // ─── Login ──────────────────────────────────────────────────────────
 export async function login(userName, password) {
   const enc = encrypt(password)
-  const resp = await axios.post(
+  const resp = await http.post(
     `${HOST}/api/mobile_app/accounts/login?language=zh-cn`,
     { login: userName, password: enc, loginType: 'password' },
     {
@@ -93,7 +97,7 @@ export async function login(userName, password) {
 
 // ─── Authenticated GET ──────────────────────────────────────────────
 async function apiGet(url) {
-  const resp = await axios.get(`${HOST}${url}`, {
+  const resp = await http.get(`${HOST}${url}`, {
     headers: {
       'content-type': 'application/json',
       'x-requested-with': 'XMLHttpRequest',
@@ -136,7 +140,7 @@ export async function getDocsOfBook(bookId) {
 
 // ─── Image download ─────────────────────────────────────────────────
 export async function downloadImage(url) {
-  const resp = await axios.get(url, {
+  const resp = await http.get(url, {
     responseType: 'arraybuffer',
     headers: { referer: 'https://www.yuque.com/', 'user-agent': UA },
     timeout: 30000,
