@@ -138,6 +138,12 @@ export async function getDocsOfBook(bookId) {
   return d.data || []
 }
 
+// 知识库目录树节点（type: DOC/TITLE/LINK，含 uuid/parent_uuid/level）
+export async function getBookToc(bookId) {
+  const d = await apiGet(`/api/catalog_nodes?book_id=${bookId}`)
+  return d.data || []
+}
+
 // ─── Image download ─────────────────────────────────────────────────
 export async function downloadImage(url) {
   const resp = await http.get(url, {

@@ -1,7 +1,7 @@
-// 知识库导出：选定知识库 → 拉取文档列表 → 下载 Markdown → 写文件
+// 知识库导出：拉取目录树(TOC) → 按层级建文件夹 → 下载 Markdown 写入对应目录
 import fs from 'fs'
 import path from 'path'
-import { getDocsOfBook, http } from './yuque-api.mjs'
+import { getDocsOfBook, getBookToc, http } from './yuque-api.mjs'
 import { readCookie } from './yuque-api.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -24,7 +24,45 @@ async function retryFn(fn, tries = 4) {
 }
 
 function safeFileName(name) {
-  return name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 100)
+  return name.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 100) || '未命名'
+}
+
+// 由 TOC 节点算出每个节点所在的相对目录（祖先节点标题逐级拼接）
+function buildDirResolver(nodes) {
+  const byUuid = new Map(nodes.map((n) => [n.uuid, n]))
+  const cache = new Map()
+  function dirOf(uuid) {
+    if (cache.has(uuid)) return cache.get(uuid)
+    const node = byUuid.get(uuid)
+    const parent = node?.parent_uuid ? byUuid.get(node.parent_uuid) : null
+    const dir = parent
+      ? path.join(dirOf(parent.uuid), safeFileName(parent.title || '未命名'))
+      : ''
+    cache.set(uuid, dir)
+    return dir
+  }
+  return dirOf
+}
+
+async function downloadDoc(book, slug, dest) {
+  const mdUrl = `/${book.user || ''}/${book.slug}/${slug}/markdown?attachment=true&latexcode=false&anchor=false&linebreak=false`
+  const resp = await retryFn(() =>
+    http.get(`${HOST}${mdUrl}`, {
+      headers: {
+        cookie: cookieStr(),
+        'x-requested-with': 'XMLHttpRequest',
+        'user-agent': UA,
+      },
+      responseType: 'arraybuffer',
+    })
+  )
+  // response may be zip or text
+  const ct = resp.headers['content-type'] || ''
+  if (ct.includes('application/zip') || ct.includes('octet-stream')) {
+    fs.writeFileSync(dest.replace(/\.md$/, '.zip'), Buffer.from(resp.data))
+  } else {
+    fs.writeFileSync(dest, Buffer.from(resp.data).toString('utf8'))
+  }
 }
 
 export async function exportBooks(books, outDir, onProgress) {
@@ -36,64 +74,77 @@ export async function exportBooks(books, outDir, onProgress) {
 
   for (let bi = 0; bi < books.length; bi++) {
     const book = books[bi]
-    emit(`[${bi + 1}/${books.length}] 正在获取《${book.name}》文档列表...`,
+    emit(`[${bi + 1}/${books.length}] 正在获取《${book.name}》目录结构...`,
       5 + (bi / books.length) * 90)
 
     const bookDir = path.join(outDir, safeFileName(book.name))
     fs.mkdirSync(bookDir, { recursive: true })
 
-    let docs = []
+    // 目录树：拿不到时回退为平铺导出
+    let tocNodes = []
     try {
-      docs = await retryFn(() => getDocsOfBook(book.id))
+      tocNodes = await retryFn(() => getBookToc(book.id))
     } catch (e) {
-      report.push(`❌ 《${book.name}》获取文档列表失败: ${e.message}`)
-      continue
+      report.push(`⚠️ 《${book.name}》获取目录结构失败，按平铺导出: ${e.message}`)
     }
-    const realDocs = docs.filter((d) => d.type === 'Doc' || !d.type)
-    totalDocs += realDocs.length
-    emit(`《${book.name}》共 ${realDocs.length} 篇文档，开始下载...`,
+    const dirOf = buildDirResolver(tocNodes)
+
+    // 待导出任务：{ slug, title, relDir }
+    const tasks = []
+    const tocSlugs = new Set()
+    for (const n of tocNodes) {
+      if (n.visible === 0) continue
+      const relDir = dirOf(n.uuid)
+      if (n.type === 'TITLE') {
+        // 纯分组节点：建目录（保留空分组）
+        fs.mkdirSync(path.join(bookDir, relDir, safeFileName(n.title || '未命名')), { recursive: true })
+      } else if (n.type === 'DOC' && n.url) {
+        tocSlugs.add(n.url)
+        tasks.push({ slug: n.url, title: n.title || n.url, relDir })
+      }
+    }
+
+    // 不在目录里的文档（草稿/未归档）也不遗漏，放入"未归档"
+    try {
+      const docs = await retryFn(() => getDocsOfBook(book.id))
+      for (const d of docs.filter((x) => x.type === 'Doc' || !x.type)) {
+        if (!tocSlugs.has(d.slug)) {
+          tasks.push({ slug: d.slug, title: d.title || d.slug, relDir: tocNodes.length ? '未归档' : '' })
+        }
+      }
+    } catch (e) {
+      if (!tocNodes.length) {
+        report.push(`❌ 《${book.name}》获取文档列表失败: ${e.message}`)
+        continue
+      }
+    }
+
+    totalDocs += tasks.length
+    emit(`《${book.name}》共 ${tasks.length} 篇文档，开始下载...`,
       5 + (bi / books.length) * 90)
 
-    for (let di = 0; di < realDocs.length; di++) {
-      const doc = realDocs[di]
-      const title = doc.title || doc.slug || `doc-${di}`
-      const fname = safeFileName(title) + '.md'
-      const dest = path.join(bookDir, fname)
+    for (let di = 0; di < tasks.length; di++) {
+      const t = tasks[di]
+      const destDir = path.join(bookDir, t.relDir)
+      fs.mkdirSync(destDir, { recursive: true })
+      const relPath = path.join(t.relDir, safeFileName(t.title) + '.md')
+      const dest = path.join(bookDir, relPath)
       if (fs.existsSync(dest)) {
         doneDocs++
-        report.push(`⏩ [${book.name}] ${title} 已存在，跳过`)
+        report.push(`⏩ [${book.name}] ${relPath} 已存在，跳过`)
         continue
       }
       try {
-        const mdUrl = `/${book.user || ''}/${book.slug}/${doc.slug}/markdown?attachment=true&latexcode=false&anchor=false&linebreak=false`
-        const resp = await retryFn(() =>
-          http.get(`${HOST}${mdUrl}`, {
-            headers: {
-              cookie: cookieStr(),
-              'x-requested-with': 'XMLHttpRequest',
-              'user-agent': UA,
-            },
-            responseType: 'arraybuffer',
-          })
-        )
-        // response may be zip or text
-        const ct = resp.headers['content-type'] || ''
-        if (ct.includes('application/zip') || ct.includes('octet-stream')) {
-          // save as zip
-          fs.writeFileSync(dest.replace('.md', '.zip'), Buffer.from(resp.data))
-        } else {
-          const text = Buffer.from(resp.data).toString('utf8')
-          fs.writeFileSync(dest, text)
-        }
+        await downloadDoc(book, t.slug, dest)
         doneDocs++
-        report.push(`✅ [${book.name}] ${title}`)
+        report.push(`✅ [${book.name}] ${relPath}`)
       } catch (e) {
         failDocs++
-        report.push(`❌ [${book.name}] ${title}: ${e.message}`)
+        report.push(`❌ [${book.name}] ${relPath}: ${e.message}`)
       }
       if (di % 10 === 0) {
-        emit(`《${book.name}》${di + 1}/${realDocs.length}，已完成 ${doneDocs} 篇`,
-          5 + ((bi + (di / realDocs.length)) / books.length) * 90)
+        emit(`《${book.name}》${di + 1}/${tasks.length}，已完成 ${doneDocs} 篇`,
+          5 + ((bi + (di / tasks.length)) / books.length) * 90)
       }
       await sleep(400)
     }
