@@ -64,10 +64,10 @@ ipcMain.handle('export-notes', async (_e, { outDir }) => {
   })
 })
 
-ipcMain.handle('export-books', async (_e, { books, outDir }) => {
+ipcMain.handle('export-books', async (_e, { books, outDir, downloadAssets }) => {
   const { exportBooks } = await import('./src/export-books.mjs')
   const bookDir = path.join(outDir, 'books')
   return exportBooks(books, bookDir, (prog) => {
     win?.webContents.send('progress', prog)
-  })
+  }, { downloadAssets })
 })

@@ -166,6 +166,12 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
             <div class="book-loading">点击「刷新列表」加载知识库</div>
           </div>
         </div>
+        <div style="margin-top:12px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;cursor:pointer">
+            <input type="checkbox" id="chkDownloadAssets" checked style="width:16px;height:16px;accent-color:#1a6ed8">
+            同时下载图片、视频等附件（关闭则只导出 Markdown 文本，速度更快）
+          </label>
+        </div>
         <div style="margin-top:16px">
           <button class="btn btn-primary" id="btnStartBooks" disabled>开始导出知识库</button>
         </div>

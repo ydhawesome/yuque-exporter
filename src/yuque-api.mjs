@@ -153,3 +153,24 @@ export async function downloadImage(url) {
   })
   return Buffer.from(resp.data)
 }
+
+// ─── Asset download（图片/视频/附件通用）──────────────────────────────
+// 跟 downloadImage 的区别：超时放宽（视频可能几十 MB）、带上 cookie（部分
+// 私有知识库的附件需要登录态）、并把 content-type 一起返回用于推断扩展名
+export async function downloadAsset(url, timeout = 120000) {
+  const resp = await http.get(url, {
+    responseType: 'arraybuffer',
+    headers: {
+      referer: 'https://www.yuque.com/',
+      'user-agent': UA,
+      cookie: cookieStr(),
+    },
+    timeout,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  })
+  return {
+    buf: Buffer.from(resp.data),
+    contentType: (resp.headers['content-type'] || '').split(';')[0].trim(),
+  }
+}

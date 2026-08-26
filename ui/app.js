@@ -182,12 +182,15 @@ $('btnStartBooks').addEventListener('click', async () => {
   if (!books.length || !booksOutDir) return
   startProgress(`正在导出 ${books.length} 个知识库...`)
   try {
-    const result = await window.yapi.exportBooks({ books, outDir: booksOutDir })
-    showDone('知识库导出完成', [
+    const downloadAssets = $('chkDownloadAssets').checked
+    const result = await window.yapi.exportBooks({ books, outDir: booksOutDir, downloadAssets })
+    const stats = [
       { num: result.totalDocs, label: '文档总数' },
       { num: result.doneDocs, label: '下载成功' },
       { num: result.failDocs, label: '失败' },
-    ], [
+    ]
+    if (downloadAssets && result.assets) stats.push({ num: result.assets.done, label: '附件' })
+    showDone('知识库导出完成', stats, [
       { label: '打开导出目录', path: result.outDir },
     ])
   } catch (e) {
