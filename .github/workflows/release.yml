@@ -26,6 +26,9 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 运行导出回归测试
+        run: npm test
+
       - name: 打包便携版 exe
         run: npm run build
         env:

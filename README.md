@@ -49,8 +49,10 @@
 - 逐篇下载文档的 **Markdown 源文件**
 - **图片、视频等附件一并下载**到知识库根目录的 `assets/`，正文里的链接自动改写成本地相对路径，断网也能正常查看（可在导出前取消勾选，只导出纯文本）
   - 单个附件默认上限 200MB，超限或下载失败的会在报告里列出，并保留原始外链
+  - 支持语雀上传视频的 `_lake_card` 链接和旧式卡片锚点，自动解析真实视频地址，下载到 `assets/`，点击 Markdown 中的本地链接即可用播放器打开
+  - 普通文档链接和外站嵌入视频保留原链接；Markdown 阅读器是否能内嵌播放视频取决于阅读器自身
 - 保留知识库原有的**目录层级**，按文件夹存放，并生成**导出报告**（成功/失败/跳过明细）
-- 已存在的文件自动跳过，支持断点续传式的重复运行
+- 已存在的 Markdown 保留正文，并在开启附件下载时检查、补齐仍为外链的视频和附件；已下载的资源复用本地文件，失败的可以再次运行重试
 
 ---
 
@@ -84,13 +86,19 @@ npm install
 npm start
 ```
 
+### 运行离线回归测试
+```bash
+npm test
+```
+测试使用模拟视频卡片和 HTTP 响应，不需要语雀账号。
+
 ### 打包便携版 exe
 ```bash
 # 国内网络建议先设置 Electron 镜像
 set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/   # Windows CMD
 npm run build
 ```
-产物在 `dist/语雀导出工具-便携版.exe`。
+产物在 `dist/Yuque-Exporter-Portable-<版本号>.exe`。
 
 > 如需改回安装版（NSIS），把 `package.json` 里 `build.win.target` 由 `portable` 改为 `nsis` 即可。
 
@@ -110,6 +118,7 @@ yuque-exporter/
 │  ├─ parse-lake.mjs    # 语雀 Lake HTML 解析（提取图片、链接、纯文本）
 │  ├─ export-notes.mjs  # 小记导出全流程
 │  ├─ export-books.mjs  # 知识库导出全流程
+│  ├─ book-assets.mjs   # 附件本地化、视频卡片解析和本地缓存
 │  └─ make-excel.mjs    # exceljs 生成带嵌入图片的 Excel
 ├─ assets/icon.ico      # 应用图标
 └─ package.json

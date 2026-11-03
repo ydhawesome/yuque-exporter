@@ -1,9 +1,9 @@
 // 知识库导出：拉取目录树(TOC) → 按层级建文件夹 → 下载 Markdown 写入对应目录
 import fs from 'fs'
 import path from 'path'
-import crypto from 'crypto'
-import { getDocsOfBook, getBookToc, http, downloadAsset } from './yuque-api.mjs'
+import { getDocsOfBook, getBookToc, getDocContent, http } from './yuque-api.mjs'
 import { readCookie } from './yuque-api.mjs'
+import { localizeDocAssets } from './book-assets.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const HOST = 'https://www.yuque.com'
@@ -45,96 +45,13 @@ function buildDirResolver(nodes) {
   return dirOf
 }
 
-// ─── 附件/多媒体下载 ─────────────────────────────────────────────────
-// 语雀导出的 MD 里，图片和附件都是指向 CDN 的外链，原来只存了 MD 文本，
-// 链接指向的视频/文件本身没下载下来（GitHub issue #1）。这里把它们抓到
-// 本地 assets/ 目录，并把 MD 里的链接改写成相对路径。
-
-// markdown 里的 ![alt](url) 和 [text](url)
-const MD_LINK_RE = /(!?)\[([^\]]*)\]\(\s*(<?)([^)\s]+?)\3\s*(?:"[^"]*")?\)/g
-
-// 只下载真正的资源外链：CDN 域名，或语雀的 /attachments/ 路径。
-// 普通文档链接（www.yuque.com/user/book/slug）必须排除，否则会把整站爬下来
-function isAssetUrl(url) {
-  if (!/^https?:\/\//i.test(url)) return false
-  let u
-  try { u = new URL(url) } catch { return false }
-  if (/(^|\.)nlark\.com$/i.test(u.hostname)) return true
-  if (/(^|\.)yuque\.com$/i.test(u.hostname) && u.pathname.startsWith('/attachments/')) return true
-  return false
-}
-
-const MIME_EXT = {
-  'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
-  'image/svg+xml': '.svg', 'image/bmp': '.bmp',
-  'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/x-msvideo': '.avi', 'video/webm': '.webm',
-  'audio/mpeg': '.mp3', 'audio/wav': '.wav', 'audio/mp4': '.m4a',
-  'application/pdf': '.pdf', 'application/zip': '.zip',
-  'application/msword': '.doc', 'application/vnd.ms-excel': '.xls',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
-}
-
-// 从 URL（可能带一堆查询参数）推断一个干净的文件名
-function assetFileName(url, linkText, contentType) {
-  let base = ''
-  try {
-    base = decodeURIComponent(new URL(url).pathname.split('/').pop() || '')
-  } catch { base = '' }
-  // URL 里没有像样的文件名时，退回用链接文字（语雀附件的链接文字通常就是文件名）
-  if (!base || !path.extname(base)) {
-    const fromText = (linkText || '').trim()
-    if (fromText && path.extname(fromText)) base = fromText
-  }
-  base = safeFileName(base || 'asset')
-  if (!path.extname(base)) base += (MIME_EXT[contentType] || '.bin')
-  // URL 短哈希做前缀：同名不同文件不会互相覆盖，同一个 URL 也能稳定命中缓存
-  const hash = crypto.createHash('md5').update(url).digest('hex').slice(0, 8)
-  return `${hash}-${base}`
-}
-
-// 下载一篇文档里引用的所有资源，返回改写后的 markdown
-async function fetchDocAssets(md, assetsDir, mdDir, stats, maxBytes) {
-  const found = []
-  let m
-  MD_LINK_RE.lastIndex = 0
-  while ((m = MD_LINK_RE.exec(md))) {
-    const url = m[4]
-    if (isAssetUrl(url) && !found.some((f) => f.url === url)) {
-      found.push({ url, text: m[2] })
-    }
-  }
-  if (!found.length) return md
-
-  let out = md
-  for (const { url, text } of found) {
-    try {
-      let localPath = stats.urlToPath.get(url)
-      if (!localPath) {
-        const { buf, contentType } = await retryFn(() => downloadAsset(url), 3)
-        if (maxBytes && buf.length > maxBytes) {
-          stats.skipped++
-          stats.notes.push(`⏭ 附件过大跳过（${(buf.length / 1048576).toFixed(1)}MB）: ${url}`)
-          continue
-        }
-        const fname = assetFileName(url, text, contentType)
-        fs.mkdirSync(assetsDir, { recursive: true })
-        localPath = path.join(assetsDir, fname)
-        if (!fs.existsSync(localPath)) fs.writeFileSync(localPath, buf)
-        stats.urlToPath.set(url, localPath)
-        stats.done++
-        await sleep(150)
-      }
-      // MD 里用相对路径引用（文档可能在多层子目录里）
-      const rel = path.relative(mdDir, localPath).split(path.sep).join('/')
-      out = out.split(url).join(rel)
-    } catch (e) {
-      stats.failed++
-      stats.notes.push(`❌ 附件下载失败: ${url} (${e.message})`)
-    }
-  }
-  return out
+function localize(text, book, slug, dest, assetCtx) {
+  return localizeDocAssets(text, {
+    ...assetCtx,
+    mdDir: path.dirname(dest),
+    docUrl: `${HOST}/${book.user || ''}/${book.slug}/${slug}`,
+    getContent: () => getDocContent(book.id, slug),
+  })
 }
 
 async function downloadDoc(book, slug, dest, assetCtx) {
@@ -158,7 +75,7 @@ async function downloadDoc(book, slug, dest, assetCtx) {
   }
   let text = Buffer.from(resp.data).toString('utf8')
   if (assetCtx) {
-    text = await fetchDocAssets(text, assetCtx.assetsDir, path.dirname(dest), assetCtx.stats, assetCtx.maxBytes)
+    text = await localize(text, book, slug, dest, assetCtx)
   }
   fs.writeFileSync(dest, text)
 }
@@ -231,18 +148,25 @@ export async function exportBooks(books, outDir, onProgress, options = {}) {
       fs.mkdirSync(destDir, { recursive: true })
       const relPath = path.join(t.relDir, safeFileName(t.title) + '.md')
       const dest = path.join(bookDir, relPath)
-      if (fs.existsSync(dest)) {
-        doneDocs++
-        report.push(`⏩ [${book.name}] ${relPath} 已存在，跳过`)
-        continue
-      }
       try {
         const assetCtx = downloadAssets
           ? { assetsDir: path.join(bookDir, 'assets'), stats: assetStats, maxBytes }
           : null
-        await downloadDoc(book, t.slug, dest, assetCtx)
+        if (fs.existsSync(dest)) {
+          // 保留已有正文，仅补齐尚未本地化的视频/附件，支持旧版本导出目录。
+          if (assetCtx) {
+            const text = fs.readFileSync(dest, 'utf8')
+            const updated = await localize(text, book, t.slug, dest, assetCtx)
+            if (updated !== text) fs.writeFileSync(dest, updated)
+          }
+          report.push(`⏩ [${book.name}] ${relPath} 已存在${assetCtx ? '，已检查并补齐附件' : '，跳过'}`)
+        } else if (fs.existsSync(dest.replace(/\.md$/, '.zip'))) {
+          report.push(`⏩ [${book.name}] ${relPath.replace(/\.md$/, '.zip')} 已存在，跳过`)
+        } else {
+          await downloadDoc(book, t.slug, dest, assetCtx)
+          report.push(`✅ [${book.name}] ${relPath}`)
+        }
         doneDocs++
-        report.push(`✅ [${book.name}] ${relPath}`)
       } catch (e) {
         failDocs++
         report.push(`❌ [${book.name}] ${relPath}: ${e.message}`)

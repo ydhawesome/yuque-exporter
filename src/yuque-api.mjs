@@ -144,6 +144,33 @@ export async function getBookToc(bookId) {
   return d.data || []
 }
 
+// Markdown 中只有卡片锚点的旧式音视频，需要从 Lake 正文中补取资源 ID。
+export async function getDocContent(bookId, slug) {
+  const d = await apiGet(`/api/docs/${encodeURIComponent(slug)}?book_id=${encodeURIComponent(bookId)}`)
+  const content = d?.data?.content ?? d?.data?.body_lake
+  if (typeof content !== 'string') throw new Error('获取文档正文失败，无法解析视频卡片')
+  return content
+}
+
+// 语雀视频卡片的 videoId 不是可下载的 URL，必须先换取实际媒体地址。
+export async function getVideoInfo(videoId) {
+  if (typeof videoId !== 'string' || !videoId.trim()) throw new Error('视频资源 ID 为空')
+  const d = await apiGet(`/api/video?video_id=${encodeURIComponent(videoId.trim())}`)
+  const data = d?.data
+  if (!data || (data.status && data.status !== 'success')) {
+    throw new Error('获取视频地址失败，请检查登录状态或视频权限')
+  }
+  const info = data.info
+  const url = info?.video || info?.url
+  try {
+    const parsed = new URL(url)
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error()
+  } catch {
+    throw new Error('语雀未返回有效的视频下载地址')
+  }
+  return { url, name: typeof info.name === 'string' ? info.name : '' }
+}
+
 // ─── Image download ─────────────────────────────────────────────────
 export async function downloadImage(url) {
   const resp = await http.get(url, {
@@ -157,20 +184,52 @@ export async function downloadImage(url) {
 // ─── Asset download（图片/视频/附件通用）──────────────────────────────
 // 跟 downloadImage 的区别：超时放宽（视频可能几十 MB）、带上 cookie（部分
 // 私有知识库的附件需要登录态）、并把 content-type 一起返回用于推断扩展名
-export async function downloadAsset(url, timeout = 120000) {
-  const resp = await http.get(url, {
-    responseType: 'arraybuffer',
-    headers: {
-      referer: 'https://www.yuque.com/',
-      'user-agent': UA,
-      cookie: cookieStr(),
-    },
-    timeout,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-  })
-  return {
-    buf: Buffer.from(resp.data),
-    contentType: (resp.headers['content-type'] || '').split(';')[0].trim(),
+export async function downloadAsset(url, timeout = 120000, maxBytes = 0) {
+  let parsed
+  try { parsed = new URL(url) } catch { throw new Error('附件下载地址无效') }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('附件下载地址必须使用 HTTP 或 HTTPS')
+  const trustedHost = (host) => /(^|\.)(yuque\.com|nlark\.com)$/i.test(host)
+  const headers = { referer: `${HOST}/`, 'user-agent': UA }
+  if (trustedHost(parsed.hostname)) headers.cookie = cookieStr()
+  const limit = Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : Infinity
+  let resp
+  try {
+    resp = await http.get(url, {
+      responseType: 'arraybuffer',
+      headers,
+      timeout,
+      maxContentLength: limit,
+      maxBodyLength: Infinity,
+      beforeRedirect(options) {
+        // 视频可能由独立 CDN 提供，跳转时不向第三方转发语雀登录态。
+        if (!trustedHost(options.hostname || '')) {
+          for (const name of Object.keys(options.headers || {})) {
+            if (name.toLowerCase() === 'cookie') delete options.headers[name]
+          }
+        }
+      },
+    })
+  } catch (e) {
+    if (limit !== Infinity && /maxContentLength.*exceeded/i.test(e.message || '')) {
+      const error = new Error(`附件超过大小上限（${(limit / 1048576).toFixed(1)}MB）`)
+      error.code = 'ASSET_TOO_LARGE'
+      throw error
+    }
+    throw e
   }
+  const buf = Buffer.from(resp.data)
+  if (!buf.length) throw new Error('附件返回了空内容，请稍后重试')
+  // 除了网络适配器的流量限制，也覆盖测试适配器和其他返回已缓冲数据的适配器。
+  if (buf.length > limit) {
+    const error = new Error(`附件超过大小上限（${(limit / 1048576).toFixed(1)}MB）`)
+    error.code = 'ASSET_TOO_LARGE'
+    throw error
+  }
+  const contentType = (resp.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
+  const prefix = buf.subarray(0, 1024).toString('utf8').trimStart()
+  const isHtml = ['text/html', 'application/xhtml+xml'].includes(contentType)
+    || /^<!doctype\s+html\b|^<html\b/i.test(prefix)
+  // JSON 可以是用户上传的合法附件，是否适合作为视频由调用方单独验证。
+  if (isHtml) throw new Error('附件返回了网页，请检查登录状态或附件权限')
+  return { buf, contentType }
 }
