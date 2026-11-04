@@ -44,6 +44,12 @@ ipcMain.handle('get-books', async () => {
   return getBookStacks()
 })
 
+ipcMain.handle('get-book-catalog', async (_e, bookId) => {
+  if (!['string', 'number'].includes(typeof bookId) || !String(bookId).trim()) throw new Error('知识库 ID 无效')
+  const { loadBookCatalog } = await import('./src/book-catalog.mjs')
+  return loadBookCatalog(bookId)
+})
+
 ipcMain.handle('select-dir', async () => {
   const result = await dialog.showOpenDialog(win, {
     properties: ['openDirectory', 'createDirectory'],

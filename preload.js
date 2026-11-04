@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('yapi', {
   checkLogin: () => ipcRenderer.invoke('check-login'),
   login: (creds) => ipcRenderer.invoke('login', creds),
   getBooks: () => ipcRenderer.invoke('get-books'),
+  getBookCatalog: (bookId) => ipcRenderer.invoke('get-book-catalog', bookId),
   selectDir: () => ipcRenderer.invoke('select-dir'),
   openFolder: (p) => ipcRenderer.invoke('open-folder', p),
   exportNotes: (opts) => ipcRenderer.invoke('export-notes', opts),

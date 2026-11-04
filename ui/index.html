@@ -51,15 +51,30 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
 .tip{font-size:12px;color:#718096;margin-top:6px;line-height:1.6}
 
 /* book list */
-.book-list{max-height:260px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fafafa}
-.book-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;transition:background .15s}
-.book-item:last-child{border-bottom:none}
+.book-list{max-height:clamp(140px,calc(100vh - 500px),300px);overflow:auto;border:1px solid #e2e8f0;border-radius:8px;background:#fafafa}
+.book-group+.book-group{border-top:1px solid #e2e8f0}
+.book-item{display:flex;align-items:center;gap:8px;padding:10px;transition:background .15s}
 .book-item:hover{background:#ebf4ff}
-.book-item input[type=checkbox]{width:16px;height:16px;accent-color:#1a6ed8;flex-shrink:0}
-.book-name{font-weight:500;flex:1}
-.book-user{font-size:12px;color:#718096}
+.book-list input[type=checkbox]{width:16px;height:16px;accent-color:#1a6ed8;flex-shrink:0;cursor:pointer}
+.book-item .book-label{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0;cursor:pointer;margin-bottom:0}
+.book-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.book-user,.book-count,.tree-count{font-size:12px;color:#718096}
+.book-count,.tree-count{flex-shrink:0}
 .book-actions{display:flex;gap:8px;margin-bottom:10px}
 .book-loading{text-align:center;padding:24px;color:#718096}
+.book-tree{border-top:1px solid #edf2f7;background:#fff;padding:5px 0 8px}
+.tree-row{display:flex;align-items:center;gap:7px;min-height:34px;padding:3px 12px 3px calc(18px + var(--depth)*20px)}
+.tree-row:hover{background:#f0f7ff}
+.tree-toggle{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0;border:0;border-radius:4px;background:transparent;color:#4a5568;font-size:17px;cursor:pointer}
+.tree-toggle:hover{background:#dbeafe}
+.tree-spacer{width:24px;flex-shrink:0}
+.tree-icon{font-size:14px;flex-shrink:0}
+.tree-row .tree-title{flex:1;min-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;font-size:13px;margin-bottom:0;font-weight:400}
+.tree-message{padding:10px 18px;font-size:12px;color:#718096;line-height:1.6}
+.tree-error{color:#c53030}
+.tree-warning{color:#975a16;background:#fffaf0}
+.tree-retry{border:0;background:none;color:#1a6ed8;cursor:pointer;text-decoration:underline}
+.selection-summary{color:#1a6ed8;overflow-wrap:anywhere}
 
 /* ── PROGRESS SCREEN ── */
 .progress-wrap{margin:20px 0}
@@ -96,7 +111,7 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
 <div id="app">
   <div class="header">
     <h1>语雀导出工具</h1>
-    <span class="tag">v1.0</span>
+    <span class="tag">v1.2.0</span>
     <div class="login-status" id="loginStatus">
       <span class="dot"></span><span id="loginName">未登录</span>
     </div>
@@ -165,6 +180,8 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
           <div class="book-list" id="bookList">
             <div class="book-loading">点击「刷新列表」加载知识库</div>
           </div>
+          <p class="tip">点击箭头展开目录；勾选知识库导出全部，或勾选文件夹、单篇文档导出所选内容。文件夹会连同下级文档一起选中。</p>
+          <p class="tip selection-summary" id="bookSelectionSummary" role="status">尚未选择导出内容</p>
         </div>
         <div style="margin-top:12px">
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#475569;cursor:pointer">
@@ -228,6 +245,7 @@ body{font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f0f4f8;color
     document.addEventListener('keydown',function(e){if(e.key==='Escape')close()});
   })();
 </script>
+<script src="../src/book-tree.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

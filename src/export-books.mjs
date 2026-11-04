@@ -1,9 +1,11 @@
 // 知识库导出：拉取目录树(TOC) → 按层级建文件夹 → 下载 Markdown 写入对应目录
 import fs from 'fs'
 import path from 'path'
-import { getDocsOfBook, getBookToc, getDocContent, http } from './yuque-api.mjs'
+import { getDocContent, http } from './yuque-api.mjs'
 import { readCookie } from './yuque-api.mjs'
 import { localizeDocAssets } from './book-assets.mjs'
+import { loadBookCatalog } from './book-catalog.mjs'
+import BookTree from './book-tree.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const HOST = 'https://www.yuque.com'
@@ -25,24 +27,7 @@ async function retryFn(fn, tries = 4) {
 }
 
 function safeFileName(name) {
-  return name.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 100) || '未命名'
-}
-
-// 由 TOC 节点算出每个节点所在的相对目录（祖先节点标题逐级拼接）
-function buildDirResolver(nodes) {
-  const byUuid = new Map(nodes.map((n) => [n.uuid, n]))
-  const cache = new Map()
-  function dirOf(uuid) {
-    if (cache.has(uuid)) return cache.get(uuid)
-    const node = byUuid.get(uuid)
-    const parent = node?.parent_uuid ? byUuid.get(node.parent_uuid) : null
-    const dir = parent
-      ? path.join(dirOf(parent.uuid), safeFileName(parent.title || '未命名'))
-      : ''
-    cache.set(uuid, dir)
-    return dir
-  }
-  return dirOf
+  return name.replace(/[\\/:*?"<>|]/g, '_').trim().slice(0, 100).replace(/[. ]+$/, '') || '未命名'
 }
 
 function localize(text, book, slug, dest, assetCtx) {
@@ -99,46 +84,27 @@ export async function exportBooks(books, outDir, onProgress, options = {}) {
     const bookDir = path.join(outDir, safeFileName(book.name))
     fs.mkdirSync(bookDir, { recursive: true })
 
-    // 目录树：拿不到时回退为平铺导出
-    let tocNodes = []
+    let catalog
     try {
-      tocNodes = await retryFn(() => getBookToc(book.id))
+      catalog = await retryFn(() => loadBookCatalog(book.id))
     } catch (e) {
-      report.push(`⚠️ 《${book.name}》获取目录结构失败，按平铺导出: ${e.message}`)
+      report.push(`❌ 《${book.name}》${e.message}`)
+      continue
     }
-    const dirOf = buildDirResolver(tocNodes)
-
-    // 待导出任务：{ slug, title, relDir }
-    const tasks = []
-    const tocSlugs = new Set()
-    for (const n of tocNodes) {
-      if (n.visible === 0) continue
-      const relDir = dirOf(n.uuid)
-      if (n.type === 'TITLE') {
-        // 纯分组节点：建目录（保留空分组）
-        fs.mkdirSync(path.join(bookDir, relDir, safeFileName(n.title || '未命名')), { recursive: true })
-      } else if (n.type === 'DOC' && n.url) {
-        tocSlugs.add(n.url)
-        tasks.push({ slug: n.url, title: n.title || n.url, relDir })
-      }
+    for (const warning of catalog.warnings) report.push(`⚠️ 《${book.name}》${warning}`)
+    const plan = BookTree.planBookExport(catalog.roots, book.selection)
+    const tasks = plan.tasks.map(task => ({ ...task, relDir: path.join(...task.ancestors.map(safeFileName), '') }))
+    for (const segments of plan.directories) {
+      fs.mkdirSync(path.join(bookDir, ...segments.map(safeFileName)), { recursive: true })
+    }
+    if (plan.partial) report.push(`📌 《${book.name}》按勾选范围导出 ${tasks.length} 篇文档`)
+    for (const slug of plan.missingDocs) report.push(`⚠️ 《${book.name}》已选文档不存在或无法访问，已跳过：${slug}`)
+    if (plan.missingFolders.length) {
+      report.push(`⚠️ 《${book.name}》${plan.missingFolders.length} 个已选目录不存在或无法访问，已跳过`)
     }
 
-    // 不在目录里的文档（草稿/未归档）也不遗漏，放入"未归档"
-    try {
-      const docs = await retryFn(() => getDocsOfBook(book.id))
-      for (const d of docs.filter((x) => x.type === 'Doc' || !x.type)) {
-        if (!tocSlugs.has(d.slug)) {
-          tasks.push({ slug: d.slug, title: d.title || d.slug, relDir: tocNodes.length ? '未归档' : '' })
-        }
-      }
-    } catch (e) {
-      if (!tocNodes.length) {
-        report.push(`❌ 《${book.name}》获取文档列表失败: ${e.message}`)
-        continue
-      }
-    }
-
-    totalDocs += tasks.length
+    totalDocs += tasks.length + plan.missingDocs.length
+    failDocs += plan.missingDocs.length
     emit(`《${book.name}》共 ${tasks.length} 篇文档，开始下载...`,
       5 + (bi / books.length) * 90)
 

@@ -10,6 +10,9 @@ function showScreen(name) {
 let notesOutDir = null
 let booksOutDir = null
 let bookData = []   // [{id,slug,name,user}]
+let bookStates = []
+let booksLoading = false
+const Tree = window.BookTree
 
 // ─── Login status ──────────────────────────────────────────────────
 async function refreshLoginStatus() {
@@ -123,58 +126,189 @@ $('btnSelectBooksDir').addEventListener('click', async () => {
 $('btnLoadBooks').addEventListener('click', loadBooks)
 
 async function loadBooks() {
+  if (booksLoading) return
+  booksLoading = true
+  bookData = []
+  bookStates = []
+  $('btnLoadBooks').disabled = true
+  updateBooksBtn()
   $('bookList').innerHTML = '<div class="book-loading">加载中...</div>'
   try {
     bookData = await window.yapi.getBooks()
+    bookStates = bookData.map(() => ({
+      all: false, expanded: false, loading: false, roots: null, error: '', warnings: [],
+      selected: new Set(), openNodes: new Set(),
+    }))
     renderBookList()
   } catch (e) {
     $('bookList').innerHTML = `<div class="book-loading" style="color:#e53e3e">加载失败: ${escHtml(cleanErr(e))}</div>`
+  } finally {
+    booksLoading = false
+    $('btnLoadBooks').disabled = false
+    updateBooksBtn()
   }
 }
 
 function renderBookList() {
+  const scrollTop = $('bookList').scrollTop
+  const focusId = document.activeElement?.id
   if (!bookData.length) {
     $('bookList').innerHTML = '<div class="book-loading">没有找到知识库</div>'
+    updateBooksBtn()
     return
   }
-  $('bookList').innerHTML = bookData.map((b, i) => `
-    <div class="book-item" data-i="${i}">
-      <input type="checkbox" id="bk${i}" data-i="${i}"/>
-      <div>
-        <div class="book-name">${escHtml(b.name)}</div>
-        <div class="book-user">@${escHtml(b.user)}</div>
+  $('bookList').innerHTML = bookData.map((book, i) => {
+    const state = bookStates[i]
+    const selection = Tree.selectionState(state.roots || [], state.selected)
+    const count = selectedDocCount(state)
+    let content = ''
+    if (state.expanded) {
+      if (state.loading) content = '<div class="tree-message" role="status">正在加载目录和文档...</div>'
+      else if (state.error) content = `<div class="tree-message tree-error">${escHtml(state.error)} <button class="tree-retry" data-action="retry" data-i="${i}">重试</button></div>`
+      else if (state.roots) {
+        content = state.warnings.map(w => `<div class="tree-message tree-warning">${escHtml(w)}</div>`).join('')
+          + (state.roots.length ? renderTreeNodes(state.roots, i, 0) : '<div class="tree-message">知识库暂无可导出的文档或目录</div>')
+      }
+    }
+    const suffix = state.roots ? `已选 ${count.selected}/${count.total} 篇` : (state.all ? '整库导出' : '展开选择文档')
+    return `<div class="book-group">
+      <div class="book-item">
+        <button class="tree-toggle" id="expandBook${i}" data-action="expand-book" data-i="${i}" aria-expanded="${state.expanded}" aria-label="${state.expanded ? '收起' : '展开'}${escAttr(book.name)}">${state.expanded ? '▾' : '▸'}</button>
+        <input type="checkbox" id="bk${i}" data-kind="book" data-i="${i}" ${state.all || selection.checked ? 'checked' : ''} data-partial="${!state.all && selection.indeterminate}" aria-label="选择整个知识库：${escAttr(book.name)}"/>
+        <label class="book-label" for="bk${i}"><span class="book-name">${escHtml(book.name)}</span><span class="book-user">@${escHtml(book.user)}</span></label>
+        <span class="book-count">${suffix}</span>
       </div>
-    </div>`).join('')
-  $('bookList').querySelectorAll('.book-item').forEach((item) => {
-    item.addEventListener('click', (e) => {
-      if (e.target.tagName === 'INPUT') return
-      const cb = item.querySelector('input[type=checkbox]')
-      cb.checked = !cb.checked
-      updateBooksBtn()
-    })
+      ${state.expanded ? `<div class="book-tree">${content}</div>` : ''}
+    </div>`
+  }).join('')
+  $('bookList').querySelectorAll('input[data-partial]').forEach(cb => {
+    cb.indeterminate = cb.dataset.partial === 'true'
   })
-  $('bookList').querySelectorAll('input[type=checkbox]').forEach((cb) => {
-    cb.addEventListener('change', updateBooksBtn)
-  })
+  $('bookList').scrollTop = scrollTop
+  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true })
+  updateBooksBtn()
+}
+
+function renderTreeNodes(nodes, bookIndex, depth) {
+  const state = bookStates[bookIndex]
+  return nodes.map(node => {
+    const selection = Tree.selectionState([node], state.selected)
+    const canExpand = node.children.length > 0
+    const expanded = state.openNodes.has(node.key)
+    const id = `node-${bookIndex}-${encodeURIComponent(node.key)}`
+    const count = node.children.length ? Tree.allSelectionKeys([node]).size : 0
+    return `<div class="tree-row" style="--depth:${depth}">
+      ${canExpand ? `<button class="tree-toggle" id="expand-${id}" data-action="expand-node" data-i="${bookIndex}" data-key="${escAttr(node.key)}" aria-expanded="${expanded}" aria-label="${expanded ? '收起' : '展开'}${escAttr(node.title)}">${expanded ? '▾' : '▸'}</button>` : '<span class="tree-spacer"></span>'}
+      <input type="checkbox" id="${escAttr(id)}" data-kind="node" data-i="${bookIndex}" data-key="${escAttr(node.key)}" ${selection.checked ? 'checked' : ''} data-partial="${selection.indeterminate}" ${selection.total ? '' : 'disabled'} aria-label="选择${escAttr(node.title)}"/>
+      <span class="tree-icon" aria-hidden="true">${node.type === 'TITLE' ? '📁' : node.type === 'LINK' ? '🔗' : '📄'}</span>
+      <label class="tree-title" for="${escAttr(id)}" title="${escAttr(node.title)}">${escHtml(node.title)}</label>
+      ${count ? `<span class="tree-count">${selection.count}/${selection.total} 项</span>` : ''}
+    </div>${canExpand && expanded ? renderTreeNodes(node.children, bookIndex, depth + 1) : ''}`
+  }).join('')
+}
+
+function selectedDocCount(state) {
+  const all = Tree.allSelectionKeys(state.roots || [])
+  const docKeys = [...all].filter(key => key.startsWith('doc:'))
+  return { total: docKeys.length, selected: docKeys.filter(key => state.selected.has(key)).length }
+}
+
+async function loadBookTree(index) {
+  const state = bookStates[index]
+  if (!state || state.loading || state.roots) return
+  state.loading = true
+  state.error = ''
+  renderBookList()
+  try {
+    const catalog = await window.yapi.getBookCatalog(bookData[index].id)
+    if (bookStates[index] !== state) return // 刷新列表后丢弃旧请求。
+    state.roots = catalog.roots
+    state.warnings = catalog.warnings
+    if (state.all) state.selected = Tree.allSelectionKeys(state.roots)
+  } catch (e) {
+    if (bookStates[index] !== state) return
+    state.error = cleanErr(e)
+  } finally {
+    if (bookStates[index] === state) {
+      state.loading = false
+      renderBookList()
+    }
+  }
 }
 
 function selectedBooks() {
-  return [...$('bookList').querySelectorAll('input[type=checkbox]:checked')]
-    .map((cb) => bookData[+cb.dataset.i])
-    .filter(Boolean)
+  return bookData.flatMap((book, i) => {
+    const state = bookStates[i]
+    if (state.all) return [book]
+    if (!state.roots || !state.selected.size) return []
+    return [{ ...book, selection: Tree.exportSelection(state.roots, state.selected) }]
+  })
 }
 
 function updateBooksBtn() {
-  $('btnStartBooks').disabled = !booksOutDir || selectedBooks().length === 0
+  const selected = selectedBooks()
+  $('btnStartBooks').disabled = booksLoading || bookStates.some(s => s.loading) || !booksOutDir || !selected.length
+  $('btnCheckAll').disabled = $('btnUncheckAll').disabled = booksLoading || !bookData.length
+  $('bookSelectionSummary').textContent = !selected.length ? '尚未选择导出内容' : selected.map(book => {
+    if (!book.selection) return `《${book.name}》整库`
+    return `《${book.name}》${book.selection.docSlugs.length} 篇文档${book.selection.folderKeys.length ? '（含所选目录）' : ''}`
+  }).join('；')
 }
 
 $('btnCheckAll').addEventListener('click', () => {
-  $('bookList').querySelectorAll('input[type=checkbox]').forEach((cb) => (cb.checked = true))
-  updateBooksBtn()
+  for (const state of bookStates) {
+    state.all = true
+    state.selected = Tree.allSelectionKeys(state.roots || [])
+  }
+  renderBookList()
 })
 $('btnUncheckAll').addEventListener('click', () => {
-  $('bookList').querySelectorAll('input[type=checkbox]').forEach((cb) => (cb.checked = false))
-  updateBooksBtn()
+  for (const state of bookStates) {
+    state.all = false
+    state.selected.clear()
+  }
+  renderBookList()
+})
+
+$('bookList').addEventListener('click', e => {
+  const button = e.target.closest('button[data-action]')
+  if (!button) return
+  const index = +button.dataset.i
+  const state = bookStates[index]
+  if (!state) return
+  if (button.dataset.action === 'expand-book') {
+    state.expanded = !state.expanded
+    renderBookList()
+    if (state.expanded) loadBookTree(index)
+  } else if (button.dataset.action === 'retry') {
+    loadBookTree(index)
+  } else if (button.dataset.action === 'expand-node') {
+    const key = button.dataset.key
+    if (state.openNodes.has(key)) state.openNodes.delete(key)
+    else state.openNodes.add(key)
+    renderBookList()
+  }
+})
+
+$('bookList').addEventListener('change', e => {
+  const checkbox = e.target.closest('input[data-kind]')
+  if (!checkbox) return
+  const index = +checkbox.dataset.i
+  const state = bookStates[index]
+  if (checkbox.dataset.kind === 'book') {
+    state.all = checkbox.checked
+    state.selected = state.all ? Tree.allSelectionKeys(state.roots || []) : new Set()
+    if (state.all) state.expanded = true
+    renderBookList()
+    if (state.expanded) loadBookTree(index)
+  } else {
+    let target
+    Tree.walk(state.roots, node => { if (node.key === checkbox.dataset.key) target = node })
+    if (!target) return
+    state.all = false
+    Tree.setNodeSelected(target, state.selected, checkbox.checked)
+    renderBookList()
+  }
 })
 
 $('btnStartBooks').addEventListener('click', async () => {
@@ -256,7 +390,7 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
 function escAttr(s) {
-  return String(s).replace(/"/g,'&quot;')
+  return escHtml(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;')
 }
 function dirname(p) {
   return p.replace(/[/\\][^/\\]+$/, '')

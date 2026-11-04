@@ -134,14 +134,16 @@ export async function getBookStacks() {
 }
 
 export async function getDocsOfBook(bookId) {
-  const d = await apiGet(`/api/docs?book_id=${bookId}`)
-  return d.data || []
+  const d = await apiGet(`/api/docs?book_id=${encodeURIComponent(bookId)}`)
+  if (!Array.isArray(d?.data)) throw new Error('获取文档列表失败，请检查登录状态或知识库权限')
+  return d.data
 }
 
 // 知识库目录树节点（type: DOC/TITLE/LINK，含 uuid/parent_uuid/level）
 export async function getBookToc(bookId) {
-  const d = await apiGet(`/api/catalog_nodes?book_id=${bookId}`)
-  return d.data || []
+  const d = await apiGet(`/api/catalog_nodes?book_id=${encodeURIComponent(bookId)}`)
+  if (!Array.isArray(d?.data)) throw new Error('获取目录结构失败，请检查登录状态或知识库权限')
+  return d.data
 }
 
 // Markdown 中只有卡片锚点的旧式音视频，需要从 Lake 正文中补取资源 ID。

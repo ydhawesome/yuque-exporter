@@ -1,12 +1,13 @@
 {
   "name": "yuque-exporter",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "语雀小记 & 知识库导出工具",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
     "start": "electron .",
     "test": "node --test",
+    "test:ui": "node scripts/check-book-ui.cjs",
     "build": "electron-builder"
   },
   "dependencies": {

@@ -8,7 +8,7 @@ import nodeHttp from 'node:http'
 const suiteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuque-api-test-'))
 const originalAppData = process.env.APPDATA
 process.env.APPDATA = path.join(suiteDir, 'appdata')
-const { http, saveCookie, getVideoInfo, getDocContent, downloadAsset } = await import('../src/yuque-api.mjs')
+const { http, saveCookie, getVideoInfo, getDocContent, getBookToc, getDocsOfBook, downloadAsset } = await import('../src/yuque-api.mjs')
 const originalAdapter = http.defaults.adapter
 const originalHttpAgent = http.defaults.httpAgent
 const VIDEO_ID = 'inputs/prod/yuque/2024/example video.mp4'
@@ -95,6 +95,19 @@ test('accepts body_lake and rejects a document response without Lake content', a
   for (const data of [{ data: {} }, null]) {
     responder = config => response(config, data)
     await assert.rejects(getDocContent(1, 'doc'), /获取文档正文失败/)
+  }
+})
+
+test('loads catalog lists with encoded book ids and rejects login or permission responses', async () => {
+  responder = config => response(config, { data: [] })
+  assert.deepEqual(await getBookToc('book id'), [])
+  assert.equal(requests.at(-1).url, 'https://www.yuque.com/api/catalog_nodes?book_id=book%20id')
+  assert.deepEqual(await getDocsOfBook('book id'), [])
+  assert.equal(requests.at(-1).url, 'https://www.yuque.com/api/docs?book_id=book%20id')
+  for (const data of [{ message: 'login required' }, { data: null }, { data: {} }]) {
+    responder = config => response(config, data)
+    await assert.rejects(getBookToc(42), /获取目录结构失败/)
+    await assert.rejects(getDocsOfBook(42), /获取文档列表失败/)
   }
 })
 
