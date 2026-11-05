@@ -129,6 +129,52 @@ test('resolves old document fragment links with the matching Lake card id', asyn
   assert.equal(contentReads, 1)
 })
 
+for (const target of ['https://www.yuque.com/docs/184168882#D9nl9', '/docs/184168882#D9nl9']) {
+  test(`resolves canonical numeric document video links: ${target}`, async () => {
+    let contentReads = 0
+    const video = card({ id: 'D9nl9' })
+    const options = context({ getContent: async () => {
+      contentReads++
+      return { id: 184168882, content: `<card name="video" value="data:${encodeURIComponent(JSON.stringify(video))}"></card>` }
+    } })
+    const input = `[此处为语雀卡片，点击链接查看](${target})`
+    const markdown = await localizeDocAssets(input, options)
+    const files = assetFiles(options)
+    assert.equal(files.length, 1)
+    assertLocalReference(markdown, files[0], options.mdDir)
+    assert.ok(!markdown.includes(target))
+    assert.equal(contentReads, 1)
+    assert.equal(options.stats.failed, 0)
+  })
+}
+
+test('does not replace links to another numeric document even when its anchor matches a video in the current document', async () => {
+  const video = card({ id: 'shared-anchor' })
+  const options = context({ getContent: async () => ({
+    id: 184168882, content: `<card name="video" value="data:${encodeURIComponent(JSON.stringify(video))}"></card>`,
+  }) })
+  const input = '[其他文档](https://www.yuque.com/docs/999999#shared-anchor)'
+  assert.equal(await localizeDocAssets(input, options), input)
+  assert.equal(requests.length, 0)
+  assert.equal(assetFiles(options).length, 0)
+})
+
+test('reads canonical document content once and preserves ordinary heading anchors', async () => {
+  let contentReads = 0
+  const video = card({ id: 'D9nl9' })
+  const options = context({ getContent: async () => {
+    contentReads++
+    return { id: '184168882', content: `<card name="video" value="data:${encodeURIComponent(JSON.stringify(video))}"></card>` }
+  } })
+  const heading = '[章节](https://www.yuque.com/docs/184168882#heading)'
+  const link = '[视频](https://www.yuque.com/docs/184168882#D9nl9)'
+  const markdown = await localizeDocAssets(`${heading}\n${link}\n${link}`, options)
+  assert.ok(markdown.includes(heading))
+  assert.equal(contentReads, 1)
+  assert.equal(assetFiles(options).length, 1)
+  assert.equal(requests.filter(config => config.url === MEDIA_URL).length, 1)
+})
+
 test('localizes several videos while downloading duplicate video references once', async () => {
   const options = context()
   const second = card({ videoId: 'inputs/prod/yuque/second.mp4', name: '第二个视频.mp4', id: 'second' })

@@ -1,7 +1,7 @@
 // 知识库导出：拉取目录树(TOC) → 按层级建文件夹 → 下载 Markdown 写入对应目录
 import fs from 'fs'
 import path from 'path'
-import { getDocContent, http } from './yuque-api.mjs'
+import { getDocDetail, http } from './yuque-api.mjs'
 import { readCookie } from './yuque-api.mjs'
 import { localizeDocAssets } from './book-assets.mjs'
 import { loadBookCatalog } from './book-catalog.mjs'
@@ -35,7 +35,7 @@ function localize(text, book, slug, dest, assetCtx) {
     ...assetCtx,
     mdDir: path.dirname(dest),
     docUrl: `${HOST}/${book.user || ''}/${book.slug}/${slug}`,
-    getContent: () => getDocContent(book.id, slug),
+    getContent: () => getDocDetail(book.id, slug),
   })
 }
 

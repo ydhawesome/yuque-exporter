@@ -8,7 +8,7 @@ import nodeHttp from 'node:http'
 const suiteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuque-api-test-'))
 const originalAppData = process.env.APPDATA
 process.env.APPDATA = path.join(suiteDir, 'appdata')
-const { http, saveCookie, getVideoInfo, getDocContent, getBookToc, getDocsOfBook, downloadAsset } = await import('../src/yuque-api.mjs')
+const { http, saveCookie, getVideoInfo, getDocContent, getDocDetail, getBookToc, getDocsOfBook, downloadAsset } = await import('../src/yuque-api.mjs')
 const originalAdapter = http.defaults.adapter
 const originalHttpAgent = http.defaults.httpAgent
 const VIDEO_ID = 'inputs/prod/yuque/2024/example video.mp4'
@@ -96,6 +96,12 @@ test('accepts body_lake and rejects a document response without Lake content', a
     responder = config => response(config, data)
     await assert.rejects(getDocContent(1, 'doc'), /获取文档正文失败/)
   }
+})
+
+test('preserves the numeric document identity together with Lake content for canonical video links', async () => {
+  responder = config => response(config, { data: { id: 184168882, content: '<!doctype lake>' } })
+  assert.deepEqual(await getDocDetail(42, 'document'), { id: 184168882, content: '<!doctype lake>' })
+  assert.equal(await getDocContent(42, 'document'), '<!doctype lake>')
 })
 
 test('loads catalog lists with encoded book ids and rejects login or permission responses', async () => {

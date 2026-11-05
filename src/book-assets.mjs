@@ -131,12 +131,13 @@ async function retryNetwork(fn) {
   }
 }
 
-// getContent 按需获取 Lake，只有旧式当前文档锚点需要额外请求正文。
+// getContent 按需获取 Lake 和文档 ID；兼容已有调用方只返回 Lake 字符串。
 export async function localizeDocAssets(md, { assetsDir, mdDir, stats, maxBytes = 0, docUrl, getContent }) {
   const links = [...md.matchAll(LINK_RE)]
   const ignored = codeRanges(md)
   const replacements = []
   let videos
+  let contentDocId
   let contentError
   const attempted = new Map()
   for (const match of links) {
@@ -152,14 +153,23 @@ export async function localizeDocAssets(md, { assetsDir, mdDir, stats, maxBytes 
         if (videoCard(parsed)) card = parsed
       } else if (getContent && url.hash && docUrl) {
         const current = new URL(docUrl)
-        if (isYuque(url) && url.origin === current.origin
-          && url.pathname.replace(/\/$/, '') === current.pathname.replace(/\/$/, '')) {
+        const samePath = url.pathname.replace(/\/$/, '') === current.pathname.replace(/\/$/, '')
+        const canonical = url.pathname.match(/^\/docs\/(\d+)\/?$/)
+        if (isYuque(url) && url.origin === current.origin && (samePath || canonical)) {
           if (!videos) {
-            try { videos = lakeVideos(await retryNetwork(getContent)) }
+            try {
+              const detail = await retryNetwork(getContent)
+              const lake = typeof detail === 'string' ? detail : detail?.content
+              if (typeof lake !== 'string') throw new Error('获取文档正文失败，无法解析视频卡片')
+              contentDocId = typeof detail === 'object' && detail ? detail.id : null
+              videos = lakeVideos(lake)
+            }
             catch (error) { videos = new Map(); contentError = error }
           }
-          card = videos.get(decodeURIComponent(url.hash.slice(1))) || null
           if (contentError) throw contentError
+          // 只有当前文档的数字别名才能匹配它的卡片，避免改写其他文档中的同名锚点。
+          if (!samePath && String(contentDocId) !== canonical[1]) continue
+          card = videos.get(decodeURIComponent(url.hash.slice(1))) || null
         }
       }
       if (!card && !isAssetUrl(url)) continue

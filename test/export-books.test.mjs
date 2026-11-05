@@ -76,7 +76,7 @@ beforeEach(() => {
     if (url.pathname === '/api/docs') {
       return response(config, { data: [{ slug: 'document', title: '视频文档', type: 'Doc' }] })
     }
-    if (url.pathname === '/api/docs/document') return response(config, { data: { content: LAKE } })
+    if (url.pathname === '/api/docs/document') return response(config, { data: { id: 184168882, content: LAKE } })
     if (url.pathname === '/example/book/document/markdown') {
       return response(config, Buffer.from(markdownBody), 'text/markdown; charset=utf-8')
     }
@@ -140,6 +140,34 @@ test('can add local videos after an earlier export with asset downloads disabled
   assert.equal(markdownRequests(), 0)
   assert.equal(result.assets.failed, 0)
   assert.equal(result.doneDocs, 1)
+})
+
+test('selective export downloads videos referenced by the canonical numeric document alias', async () => {
+  markdownBody = '[此处为语雀卡片，点击链接查看](https://www.yuque.com/docs/184168882#video-card)\n'
+  const selectedBook = { ...BOOK, selection: { docSlugs: ['document'], folderKeys: [] } }
+  const result = await exportBooks([selectedBook], outDir, undefined, { downloadAssets: true })
+  assertLocalAssetReference(fs.readFileSync(mdPath(), 'utf8'))
+  assert.equal(result.assets.done, 1)
+  assert.equal(result.assets.failed, 0)
+  assert.equal(countRequests(url => url.pathname === '/api/docs/document'), 1)
+  assert.equal(markdownRequests(), 1)
+})
+
+test('repairs canonical video links in an existing export and preserves edited Markdown on repeated runs', async () => {
+  fs.mkdirSync(path.dirname(mdPath()), { recursive: true })
+  const prefix = '# 用户补充内容\n\n'
+  const suffix = '\n\n<!-- 保留本地批注 -->\n'
+  fs.writeFileSync(mdPath(), `${prefix}[语雀视频](https://www.yuque.com/docs/184168882#video-card)${suffix}`)
+  await exportBooks([BOOK], outDir, undefined, { downloadAssets: true })
+  const updated = fs.readFileSync(mdPath(), 'utf8')
+  assert.ok(updated.startsWith(prefix))
+  assert.ok(updated.endsWith(suffix))
+  assertLocalAssetReference(updated)
+  assert.equal(markdownRequests(), 0)
+  requests.length = 0
+  await exportBooks([BOOK], outDir, undefined, { downloadAssets: true })
+  assert.equal(fs.readFileSync(mdPath(), 'utf8'), updated)
+  assert.equal(countRequests(url => url.pathname === '/api/docs/document' || url.pathname === '/api/video' || url.hostname === 'cloud.video.taobao.com'), 0)
 })
 
 test('retains a failed video link and supplements it successfully on the next export', async () => {

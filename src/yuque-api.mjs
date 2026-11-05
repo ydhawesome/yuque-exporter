@@ -146,12 +146,16 @@ export async function getBookToc(bookId) {
   return d.data
 }
 
-// Markdown 中只有卡片锚点的旧式音视频，需要从 Lake 正文中补取资源 ID。
-export async function getDocContent(bookId, slug) {
+// 同时保留文档数字 ID，用于核对 Markdown 中 /docs/<id>#<card> 形式的视频引用。
+export async function getDocDetail(bookId, slug) {
   const d = await apiGet(`/api/docs/${encodeURIComponent(slug)}?book_id=${encodeURIComponent(bookId)}`)
   const content = d?.data?.content ?? d?.data?.body_lake
   if (typeof content !== 'string') throw new Error('获取文档正文失败，无法解析视频卡片')
-  return content
+  return { id: d.data.id ?? null, content }
+}
+
+export async function getDocContent(bookId, slug) {
+  return (await getDocDetail(bookId, slug)).content
 }
 
 // 语雀视频卡片的 videoId 不是可下载的 URL，必须先换取实际媒体地址。
