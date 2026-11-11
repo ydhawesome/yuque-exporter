@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const suiteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuque-book-assets-test-'))
 const originalAppData = process.env.APPDATA
@@ -317,4 +318,88 @@ test('leaves links inside fenced and inline code unchanged without requesting as
   assert.equal(requests.length, 0)
   assert.equal(contentReads, 0)
   assert.equal(assetFiles(options).length, 0)
+})
+
+const REAL_VIDEO_NAME = '课时97.疑惑19：如何设置不同粗细的表格边框？.mp4'
+function embeddedPath(markdown, mdDir) {
+  const source = markdown.match(/<source\s+src="([^"]+)"\s+type="video\/[^"]+">/i)
+  assert.ok(source, `Missing video player: ${markdown}`)
+  const src = source[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+  return fileURLToPath(new URL(src, pathToFileURL(path.join(mdDir, 'document.html'))))
+}
+
+test('replaces the Yuque placeholder with an inline video and a visible fallback link', async () => {
+  const options = context()
+  const markdown = await localizeDocAssets(`[此处为语雀卡片，点击链接查看](${videoLink(card({ name: REAL_VIDEO_NAME }))})`, options)
+  assert.equal(embeddedPath(markdown, options.mdDir), assetFiles(options)[0])
+  assert.ok(markdown.includes(REAL_VIDEO_NAME))
+  assert.ok(!markdown.includes('%E8%AF%BE'))
+  assert.ok(!markdown.includes('此处为语雀卡片'))
+  assert.match(markdown, /<video controls preload="metadata"/)
+  assert.match(markdown, /<\/video>\s*<p><a href="[^"]+">打开视频：/)
+})
+
+test('upgrades the reported nested percent-encoded local link offline and remains unchanged on reruns', async () => {
+  const options = context({ mdDir: path.join(caseDir, 'book', 'Word', '表格处理') })
+  fs.mkdirSync(options.assetsDir, { recursive: true })
+  const file = path.join(options.assetsDir, `1c80fb2d-${REAL_VIDEO_NAME}`)
+  fs.writeFileSync(file, VIDEO_BYTES)
+  const prefix = '# 用户保留的内容\n\n'
+  const suffix = '\n\n<!-- 本地批注 -->\n'
+  const old = fs.readFileSync(new URL('./fixtures/reported-video.md', import.meta.url), 'utf8').trimEnd()
+  const result = await localizeDocAssets(prefix + old + suffix, options)
+  assert.equal(embeddedPath(result, options.mdDir), file)
+  assert.ok(result.includes(`../../assets/1c80fb2d-${REAL_VIDEO_NAME}`))
+  assert.ok(result.startsWith(prefix))
+  assert.ok(result.endsWith(suffix))
+  assert.ok(!result.includes('此处为语雀卡片'))
+  assert.equal(requests.length, 0)
+  assert.equal(options.stats.done, 0)
+  assert.equal(await localizeDocAssets(result, options), result)
+})
+
+test('preserves Unicode while escaping HTML and URL delimiters in a local video filename', async () => {
+  const options = context()
+  fs.mkdirSync(options.assetsDir, { recursive: true })
+  const name = "1c80fb2d-中文 空格 & '括号(1)#100%.mp4"
+  const file = path.join(options.assetsDir, name)
+  fs.writeFileSync(file, VIDEO_BYTES)
+  const old = `[此处为语雀卡片，点击链接查看](../assets/${encodeURIComponent(name)})`
+  const result = await localizeDocAssets(old, options)
+  assert.equal(embeddedPath(result, options.mdDir), file)
+  assert.ok(result.includes('中文 空格'))
+  assert.ok(result.includes('&amp;'))
+  assert.ok(result.includes('&#39;'))
+  assert.ok(result.includes('%23100%25.mp4'))
+  assert.equal(requests.length, 0)
+})
+
+test('preserves missing local videos and local videos outside the knowledge base assets directory', async () => {
+  const options = context()
+  const outside = path.join(options.mdDir, 'private.mp4')
+  fs.writeFileSync(outside, VIDEO_BYTES)
+  const input = '[不存在](../assets/missing.mp4)\n[其他文件](private.mp4)\n[远端](https://example.com/video.mp4)'
+  assert.equal(await localizeDocAssets(input, options), input)
+  assert.equal(requests.length, 0)
+})
+
+test('keeps local video links in code examples unchanged', async () => {
+  const options = context()
+  fs.mkdirSync(options.assetsDir, { recursive: true })
+  fs.writeFileSync(path.join(options.assetsDir, 'clip.mp4'), VIDEO_BYTES)
+  const input = '```md\n[例子](../assets/clip.mp4)\n```\n\n`[例子](../assets/clip.mp4)`'
+  assert.equal(await localizeDocAssets(input, options), input)
+  assert.equal(requests.length, 0)
+})
+
+test('embeds a direct CDN video while preserving ordinary image and document attachment links', async () => {
+  const options = context()
+  responder = config => response(config, VIDEO_BYTES,
+    config.url.endsWith('.mp4') ? 'video/mp4' : config.url.endsWith('.png') ? 'image/png' : 'application/pdf')
+  const result = await localizeDocAssets('[视频](https://cdn.nlark.com/clip.mp4)\n\n![图](https://cdn.nlark.com/a.png)\n[附件](https://cdn.nlark.com/a.pdf)', options)
+  assert.ok(fs.existsSync(embeddedPath(result, options.mdDir)))
+  assert.match(result, /!\[图\]\(/)
+  assert.match(result, /\[附件\]\(/)
+  assert.equal((result.match(/<video /g) || []).length, 1)
+  assert.equal(assetFiles(options).length, 3)
 })

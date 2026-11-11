@@ -170,6 +170,31 @@ test('repairs canonical video links in an existing export and preserves edited M
   assert.equal(countRequests(url => url.pathname === '/api/docs/document' || url.pathname === '/api/video' || url.hostname === 'cloud.video.taobao.com'), 0)
 })
 
+test('upgrades a previously downloaded local video into a player without fetching the document or media', async () => {
+  fs.mkdirSync(path.dirname(mdPath()), { recursive: true })
+  const assetsDir = path.join(outDir, BOOK.name, 'assets')
+  fs.mkdirSync(assetsDir)
+  const filename = '1c80fb2d-课时97.疑惑19：如何设置不同粗细的表格边框？.mp4'
+  fs.writeFileSync(path.join(assetsDir, filename), VIDEO_BYTES)
+  const prefix = '# 自己改过的文档\n\n'
+  const suffix = '\n\n<!-- 保留批注 -->\n'
+  fs.writeFileSync(mdPath(), `${prefix}[此处为语雀卡片，点击链接查看](../assets/${encodeURIComponent(filename)})${suffix}`)
+  const result = await exportBooks([BOOK], outDir, undefined, { downloadAssets: true })
+  const updated = fs.readFileSync(mdPath(), 'utf8')
+  assert.ok(updated.startsWith(prefix))
+  assert.ok(updated.endsWith(suffix))
+  assert.ok(updated.includes(`<source src="../assets/${filename}" type="video/mp4">`))
+  assert.ok(updated.includes('打开视频：'))
+  assert.ok(!updated.includes('此处为语雀卡片'))
+  assert.equal(countRequests(url => url.pathname.includes('/api/docs/') || url.pathname === '/api/video' || url.hostname === 'cloud.video.taobao.com'), 0)
+  assert.equal(markdownRequests(), 0)
+  assert.equal(result.failDocs, 0)
+  requests.length = 0
+  await exportBooks([BOOK], outDir, undefined, { downloadAssets: true })
+  assert.equal(fs.readFileSync(mdPath(), 'utf8'), updated)
+  assert.equal((updated.match(/<video /g) || []).length, 1)
+})
+
 test('retains a failed video link and supplements it successfully on the next export', async () => {
   mediaFailure = true
   const first = await exportBooks([BOOK], outDir, undefined, { downloadAssets: true })

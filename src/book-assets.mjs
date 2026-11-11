@@ -4,7 +4,7 @@ import path from 'path'
 import crypto from 'crypto'
 import { downloadAsset, getVideoInfo } from './yuque-api.mjs'
 
-const LINK_RE = /(!?)\[([^\]\n]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+"[^"\n]*")?\s*\)/g
+const LINK_RE = /(!?)\[([^\]\n]*)\]\(\s*(?:<([^>\n]+)>|((?:\\.|[^\s()\\]|\((?:\\.|[^()\\])*\))+))(?:\s+"[^"\n]*")?\s*\)/g
 const MIME_EXT = {
   'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
   'image/svg+xml': '.svg', 'image/bmp': '.bmp',
@@ -88,6 +88,58 @@ function relativeUrl(mdDir, file) {
     .join('/')
 }
 
+const VIDEO_EXT_RE = /\.(mp4|m4v|mov|webm|ogv|avi|mkv)$/i
+const VIDEO_MIME = {
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
+  '.webm': 'video/webm', '.ogv': 'video/ogg', '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function videoEmbed(mdDir, file, title) {
+  // HTML 属性可以直接保留中文、全角标点和空格；仅编码有 URL 语义的文件名字符。
+  const relative = path.relative(mdDir, file).split(path.sep).join('/')
+  const src = escapeHtml(relative.replace(/[%#?]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase()))
+  const name = title && !/此处为语雀卡片|点击链接查看/.test(title)
+    ? title : path.basename(file).replace(/^[0-9a-f]{8}-/i, '')
+  const label = escapeHtml(name)
+  return [
+    '<video controls preload="metadata" style="max-width: 100%; height: auto;">',
+    `  <source src="${src}" type="${VIDEO_MIME[path.extname(file).toLowerCase()]}">`,
+    `  <a href="${src}">打开视频：${label}</a>`,
+    '</video>',
+    // 放在播放器外，阅读器禁用 video 或编解码器不支持时依然有可见的打开入口。
+    `<p><a href="${src}">打开视频：${label}</a></p>`,
+  ].join('\n')
+}
+
+function existingLocalVideo(original, mdDir, assetsDir) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(original) || /^[\\/#]/.test(original)) return null
+  const raw = original.replace(/&amp;/g, '&')
+  const candidates = [raw]
+  try { candidates.unshift(decodeURIComponent(raw)) } catch {}
+  for (const candidate of candidates) {
+    const file = path.resolve(mdDir, candidate)
+    const relative = path.relative(path.resolve(assetsDir), file)
+    if (!relative || relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) continue
+    if (!VIDEO_EXT_RE.test(file)) continue
+    try { const stat = fs.statSync(file); if (stat.isFile() && stat.size) return file } catch {}
+  }
+  return null
+}
+
+function embedReplacement(md, match, text) {
+  // 以独立 HTML 块输出，避免阅读器将它吞进原段落或按普通 Markdown 文字展示。
+  const before = md.slice(0, match.index)
+  const after = md.slice(match.index + match[0].length)
+  return { start: match.index, end: match.index + match[0].length,
+    text: (before && !/\n\s*\n$/.test(before) ? '\n\n' : '') + text
+      + (after && !/^\s*\n\s*\n/.test(after) ? '\n\n' : '') }
+}
+
 function codeRanges(md) {
   const ranges = []
   let fence = null
@@ -143,6 +195,12 @@ export async function localizeDocAssets(md, { assetsDir, mdDir, stats, maxBytes 
   for (const match of links) {
     if (ignored.some(([start, end]) => match.index >= start && match.index < end)) continue
     const original = match[3] ?? match[4]
+    // v1.2.1 已下载的本地视频也能直接升级为播放器，不必请求视频接口或重下载。
+    const existing = !match[1] && existingLocalVideo(original, mdDir, assetsDir)
+    if (existing) {
+      replacements.push(embedReplacement(md, match, videoEmbed(mdDir, existing, match[2])))
+      continue
+    }
     let url
     try { url = new URL(original.replace(/&amp;/g, '&'), docUrl) } catch { continue }
     if (!['https:', 'http:'].includes(url.protocol)) continue
@@ -201,9 +259,13 @@ export async function localizeDocAssets(md, { assetsDir, mdDir, stats, maxBytes 
         stats.urlToPath.set(cacheKey, localPath)
       }
       if (!localPath) continue
-      const offset = match[0].indexOf(original, match[0].indexOf('](') + 2)
-      replacements.push({ start: match.index + offset, end: match.index + offset + original.length,
-        text: relativeUrl(mdDir, localPath) })
+      if (!match[1] && VIDEO_EXT_RE.test(localPath)) {
+        replacements.push(embedReplacement(md, match, videoEmbed(mdDir, localPath, card?.name || match[2])))
+      } else {
+        const offset = match[0].indexOf(original, match[0].indexOf('](') + 2)
+        replacements.push({ start: match.index + offset, end: match.index + offset + original.length,
+          text: relativeUrl(mdDir, localPath) })
+      }
     } catch (error) {
       const key = card ? `video:${card.videoId}` : original
       if (!attempted.has(key)) {

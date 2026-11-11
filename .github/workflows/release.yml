@@ -32,6 +32,9 @@ jobs:
       - name: 验证目录选择界面
         run: npm run test:ui
 
+      - name: 验证本地视频播放器
+        run: npm run test:video
+
       - name: 打包便携版 exe
         run: npm run build
         env:
